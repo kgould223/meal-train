@@ -2,9 +2,9 @@
 
 A tiny, account-free meal sign-up page. One static `index.html` (no build, no libraries) hosted on GitHub Pages, backed by a Supabase Postgres database.
 
-- People pick an open day, enter their name, what they're bringing, and optionally a phone/email.
-- Whoever signs up can edit or cancel later. Their browser remembers a secret edit token, and they get an edit link to use on other devices.
-- Contact info and edit tokens are never sent to the public page. View them in the Supabase dashboard.
+- People pick an open day and enter their name, email, phone, and optionally what they're bringing.
+- Whoever signs up can edit or cancel later. Their browser remembers a secret edit token. On another device they tap Edit and enter the email they signed up with (10 wrong tries locks that signup).
+- Email, phone, and edit tokens are never sent to the public page. View them in the Supabase dashboard.
 
 ## Customizing the train
 
@@ -23,8 +23,8 @@ Changes show up on the next page load. No redeploy needed.
 ## Organizer tasks
 
 - **See contact info / fix a signup:** Table Editor → `signups`.
-- **Help someone who lost their edit link:** find their row in `signups` and send them
-  `https://<pages-url>/#edit=<id>.<edit_token>`.
+- **Someone can't get in (typo'd email or locked out):** fix their `email` / reset `failed_claims` to 0 in `signups`,
+  or send them `https://<pages-url>/#edit=<id>.<edit_token>`, which opens their signup directly.
 
 ## Setup from scratch
 

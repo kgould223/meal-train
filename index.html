@@ -56,8 +56,6 @@
   .actions .danger { margin-right: auto; color: var(--accent); background: none; border-color: transparent; padding-left: 0; }
   .err { color: var(--accent); font-size: .9rem; margin-top: 12px; }
   .done p { margin: 0 0 12px; }
-  .link-box { display: flex; gap: 8px; }
-  .link-box input { font-size: .8rem; }
   .toggle { margin: 8px 0 0; }
   .toggle button { background: none; border: none; color: var(--muted); padding: 0; text-decoration: underline; font-size: .9rem; }
 </style>
@@ -78,10 +76,12 @@
     <select id="f-date" required></select>
     <label for="f-name">Your name</label>
     <input id="f-name" required maxlength="100" autocomplete="name">
+    <label for="f-email">Email <small>(only the organizer sees this; you'll use it to edit later)</small></label>
+    <input id="f-email" type="email" required maxlength="200" autocomplete="email">
+    <label for="f-phone">Phone <small>(only the organizer sees this)</small></label>
+    <input id="f-phone" type="tel" required maxlength="50" autocomplete="tel">
     <label for="f-meal">What you're bringing <small>(optional)</small></label>
     <input id="f-meal" maxlength="300" placeholder="e.g. Lasagna and a salad">
-    <label for="f-contact">Phone or email <small>(only the organizer sees this)</small></label>
-    <input id="f-contact" maxlength="200" autocomplete="email">
     <label for="f-notes">Notes <small>(optional)</small></label>
     <textarea id="f-notes" maxlength="1000"></textarea>
     <div class="err" id="f-err" hidden></div>
@@ -94,9 +94,19 @@
   <form class="done" id="done" method="dialog" hidden>
     <h3>Thank you! 💛</h3>
     <p id="done-msg"></p>
-    <p>You can edit your signup from this browser any time. To edit from a different device, save this link:</p>
-    <div class="link-box"><input id="done-link" readonly><button type="button" id="copy">Copy</button></div>
+    <p>Need to change something later? Tap <b>Edit</b> on your day. On a different phone or computer, it'll just ask for your email.</p>
     <div class="actions"><button class="primary">Done</button></div>
+  </form>
+  <form id="claim" hidden>
+    <h3>Edit this signup</h3>
+    <p class="sub" id="claim-msg"></p>
+    <label for="c-email">Email you signed up with</label>
+    <input id="c-email" type="email" required maxlength="200" autocomplete="email">
+    <div class="err" id="c-err" hidden></div>
+    <div class="actions">
+      <button type="button" id="c-cancel">Close</button>
+      <button type="submit" class="primary" id="c-submit">Continue</button>
+    </div>
   </form>
 </dialog>
 
@@ -183,7 +193,8 @@ function render() {
       : el('div', { class: 'body' }, el('span', { class: 'open-label' }, 'Open'));
     const btn = past ? null
       : mine ? el('button', { onclick: () => openEdit(sig.id, tokens[sig.id]) }, 'Edit')
-      : !sig ? el('button', { class: 'primary', onclick: () => openNew(d) }, 'Sign up') : null;
+      : sig ? el('button', { onclick: () => openClaim(sig) }, 'Edit')
+      : el('button', { class: 'primary', onclick: () => openNew(d) }, 'Sign up');
     list.append(el('div', { class: `day${mine ? ' mine' : ''}${past ? ' past' : ''}` },
       el('div', { class: 'date' },
         el('div', { class: 'dow' }, date.toLocaleDateString(undefined, { weekday: 'short' })),
@@ -201,7 +212,7 @@ function fillDates(selected, allowTaken) {
 }
 
 function showForm() {
-  $('form').hidden = false; $('done').hidden = true; $('f-err').hidden = true;
+  $('form').hidden = false; $('done').hidden = true; $('claim').hidden = true; $('f-err').hidden = true;
   $('f-submit').disabled = false;
   if (!$('dlg').open) $('dlg').showModal();
 }
@@ -214,7 +225,7 @@ function openNew(date) {
   $('f-delete').hidden = true;
   // Prefill from last time to save typing.
   let last = {}; try { last = JSON.parse(localStorage.getItem('mealtrain-me')) || {}; } catch {}
-  $('f-name').value = last.name || ''; $('f-contact').value = last.contact || '';
+  $('f-name').value = last.name || ''; $('f-email').value = last.email || ''; $('f-phone').value = last.phone || '';
   $('f-meal').value = ''; $('f-notes').value = '';
   showForm();
 }
@@ -228,7 +239,7 @@ async function openEdit(id, token) {
     $('form-title').textContent = 'Edit your signup';
     $('f-submit').textContent = 'Save changes';
     $('f-delete').hidden = false;
-    $('f-name').value = row.name; $('f-contact').value = row.contact;
+    $('f-name').value = row.name; $('f-email').value = row.email; $('f-phone').value = row.phone;
     $('f-meal').value = row.meal; $('f-notes').value = row.notes;
     showForm();
   } catch (e) { alert(e.message); }
@@ -239,9 +250,9 @@ function fail(e) { $('f-err').textContent = e.message; $('f-err').hidden = false
 $('form').addEventListener('submit', async ev => {
   ev.preventDefault();
   $('f-submit').disabled = true; $('f-err').hidden = true;
-  const args = { p_date: $('f-date').value, p_name: $('f-name').value, p_contact: $('f-contact').value,
+  const args = { p_date: $('f-date').value, p_name: $('f-name').value, p_email: $('f-email').value, p_phone: $('f-phone').value,
     p_meal: $('f-meal').value, p_notes: $('f-notes').value };
-  try { localStorage.setItem('mealtrain-me', JSON.stringify({ name: args.p_name, contact: args.p_contact })); } catch {}
+  try { localStorage.setItem('mealtrain-me', JSON.stringify({ name: args.p_name, email: args.p_email, phone: args.p_phone })); } catch {}
   try {
     if (editing) {
       await rpc('update_signup', { p_id: editing.id, p_token: editing.token, ...args });
@@ -250,7 +261,6 @@ $('form').addEventListener('submit', async ev => {
       const [{ id, edit_token }] = await rpc('create_signup', args);
       saveToken(id, edit_token);
       $('done-msg').textContent = `You're signed up for ${fmtLong(args.p_date)}.`;
-      $('done-link').value = `${location.origin}${location.pathname}#edit=${id}.${edit_token}`;
       $('form').hidden = true; $('done').hidden = false;
     }
   } catch (e) { fail(e); }
@@ -263,10 +273,31 @@ $('f-delete').addEventListener('click', async () => {
   catch (e) { fail(e); }
 });
 $('f-cancel').addEventListener('click', () => $('dlg').close());
-$('copy').addEventListener('click', async () => {
-  try { await navigator.clipboard.writeText($('done-link').value); $('copy').textContent = 'Copied'; }
-  catch { $('done-link').select(); }
+
+// Editing from a new device: prove it's you with the email you signed up with.
+let claiming = null;
+function openClaim(sig) {
+  claiming = sig;
+  $('claim-msg').textContent = `${sig.name} · ${fmtLong(sig.meal_date)}`;
+  let last = {}; try { last = JSON.parse(localStorage.getItem('mealtrain-me')) || {}; } catch {}
+  $('c-email').value = last.email || '';
+  $('c-err').hidden = true; $('c-submit').disabled = false;
+  $('form').hidden = true; $('done').hidden = true; $('claim').hidden = false;
+  $('dlg').showModal();
+  $('c-email').focus();
+}
+$('claim').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  $('c-submit').disabled = true; $('c-err').hidden = true;
+  try {
+    const res = await rpc('claim_signup', { p_id: claiming.id, p_email: $('c-email').value });
+    if (res.error) throw new Error(res.error);
+    saveToken(claiming.id, res.token);
+    render();
+    await openEdit(claiming.id, res.token);
+  } catch (e) { $('c-err').textContent = e.message; $('c-err').hidden = false; $('c-submit').disabled = false; }
 });
+$('c-cancel').addEventListener('click', () => $('dlg').close());
 $('past-toggle').addEventListener('click', () => { showPast = !showPast; render(); });
 
 async function load() {
