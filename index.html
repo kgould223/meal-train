@@ -279,9 +279,19 @@ async function load() {
 }
 
 // Edit links look like #edit=<id>.<token>; remember the token on this device.
-const m = location.hash.match(/^#edit=([0-9a-f-]{36})\.([0-9a-f-]{36})$/);
-if (m) { saveToken(m[1], m[2]); history.replaceState(null, '', location.pathname); }
-load().then(() => { if (m) openEdit(m[1], m[2]); });
+function takeEditLink() {
+  const m = location.hash.match(/^#edit=([0-9a-f-]{36})\.([0-9a-f-]{36})$/);
+  if (!m) return null;
+  saveToken(m[1], m[2]);
+  history.replaceState(null, '', location.pathname);
+  return { id: m[1], token: m[2] };
+}
+window.addEventListener('hashchange', () => {
+  const link = takeEditLink();
+  if (link) { if (state.settings) render(); openEdit(link.id, link.token); }
+});
+const link = takeEditLink();
+load().then(() => { if (link) openEdit(link.id, link.token); });
 </script>
 </body>
 </html>
