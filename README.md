@@ -17,6 +17,7 @@ The organizer taps **Organizer login** on the page and enters the organizer pass
 | `address`, `dropoff_window`, `dietary_notes` | Shown in the info box (blank = hidden) |
 | `start_date`, `end_date` | Range of meal days |
 | `meal_days` | Days of the week that get a meal, `0`=Sun … `6`=Sat, e.g. `{1,3,5}` |
+| `skip_dates` | Specific dates with no meal (the organizer toggles these with the Skip / Add back buttons) |
 
 Changes show up on the next page load. No redeploy needed.
 

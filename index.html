@@ -38,7 +38,12 @@
   .date .dnum { font-size: 1.4rem; font-weight: 600; line-height: 1.1; }
   .body { flex: 1; min-width: 0; }
   .body .who { font-weight: 600; }
-  .body .what { color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
+  .body .what { font-size: .9rem; overflow-wrap: anywhere; }
+  .body .what b { color: var(--muted); font-weight: 500; }
+  .body .notes { color: var(--muted); font-size: .85rem; font-style: italic; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .btns { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+  .btns .skip { font-size: .8rem; padding: 4px 10px; background: none; color: var(--muted); }
+  .day.skipped { opacity: .6; border-style: dashed; background: none; }
   .open-label { color: var(--muted); }
   .pill { font-size: .75rem; background: var(--taken); color: var(--taken-ink); border-radius: 99px; padding: 2px 8px; margin-left: 6px; font-weight: 500; }
   button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--open); color: var(--ink); padding: 8px 14px; }
@@ -145,7 +150,7 @@
       <div><label for="o-start">First meal</label><input id="o-start" type="date" required></div>
       <div><label for="o-end">Last meal</label><input id="o-end" type="date" required></div>
     </div>
-    <label>Meal days</label>
+    <label>Meal days <small>(to skip specific dates, use the Skip button on each day)</small></label>
     <div class="days" id="o-days"></div>
     <div class="err" id="o-err" hidden></div>
     <div class="actions">
@@ -189,10 +194,11 @@ const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')
 const todayIso = () => iso(new Date());
 const fmtLong = s => parse(s).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 
-function mealDays() {
-  const s = state.settings, out = [];
+// Skipped days are hidden from visitors; the organizer sees them so they can add them back.
+function mealDays(includeSkipped = false) {
+  const s = state.settings, out = [], skip = new Set(s.skip_dates || []);
   for (let d = parse(s.start_date); iso(d) <= s.end_date; d.setDate(d.getDate() + 1)) {
-    if (s.meal_days.includes(d.getDay())) out.push(iso(d));
+    if (s.meal_days.includes(d.getDay()) && (includeSkipped || !skip.has(iso(d)))) out.push(iso(d));
   }
   return out;
 }
@@ -218,7 +224,8 @@ function render() {
 
   const bySignup = Object.fromEntries(state.signups.map(x => [x.meal_date, x]));
   const tokens = getTokens(), today = todayIso();
-  const days = mealDays();
+  const days = mealDays(!!orgToken);
+  const skip = new Set(state.settings.skip_dates || []);
   const hasPast = days.some(d => d < today);
   $('past-toggle').hidden = !hasPast;
   $('past-toggle').querySelector('button').textContent = showPast ? 'Hide past days' : 'Show past days';
@@ -233,17 +240,24 @@ function render() {
     if (m !== month) { list.append(el('h2', {}, m)); month = m; }
     const sig = bySignup[d];
     const mine = sig && tokens[sig.id];
+    const skipped = !sig && skip.has(d);
     const body = sig
       ? el('div', { class: 'body' },
           el('div', { class: 'who' }, sig.name, mine ? el('span', { class: 'pill' }, 'You') : null),
-          sig.meal ? el('div', { class: 'what' }, sig.meal) : null,
+          sig.meal ? el('div', { class: 'what' }, el('b', {}, 'Bringing: '), sig.meal) : null,
+          sig.notes ? el('div', { class: 'notes' }, sig.notes) : null,
           contacts[sig.id] ? contactLine(contacts[sig.id]) : null)
-      : el('div', { class: 'body' }, el('span', { class: 'open-label' }, 'Open'));
+      : el('div', { class: 'body' }, el('span', { class: 'open-label' },
+          skipped ? 'Skipped (hidden from visitors)' : 'Open'));
     const btn = past ? null
       : mine ? el('button', { onclick: () => openEdit(sig.id, tokens[sig.id]) }, 'Edit')
       : sig ? el('button', { onclick: () => openClaim(sig) }, 'Edit')
+      : skipped ? el('button', { onclick: () => setSkipped(d, false) }, 'Add back')
+      : orgToken ? el('div', { class: 'btns' },
+          el('button', { class: 'primary', onclick: () => openNew(d) }, 'Sign up'),
+          el('button', { class: 'skip', onclick: () => setSkipped(d, true) }, 'Skip'))
       : el('button', { class: 'primary', onclick: () => openNew(d) }, 'Sign up');
-    list.append(el('div', { class: `day${mine ? ' mine' : ''}${past ? ' past' : ''}` },
+    list.append(el('div', { class: `day${mine ? ' mine' : ''}${past ? ' past' : ''}${skipped ? ' skipped' : ''}` },
       el('div', { class: 'date' },
         el('div', { class: 'dow' }, date.toLocaleDateString(undefined, { weekday: 'short' })),
         el('div', { class: 'dnum' }, date.getDate())),
@@ -412,6 +426,12 @@ async function copyEmails() {
   if (!emails) return alert('No signups yet.');
   try { await navigator.clipboard.writeText(emails); alert(`Copied ${emails.split(', ').length} email(s).`); }
   catch { prompt('Copy these emails:', emails); }
+}
+
+async function setSkipped(date, skipped) {
+  try { await rpc('set_day_skipped', { p_token: orgToken, p_date: date, p_skipped: skipped }); }
+  catch (e) { alert(e.message); }
+  load();
 }
 
 function openOrgForm() {
