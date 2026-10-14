@@ -8,7 +8,7 @@ A tiny, account-free meal sign-up page. One static `index.html` (no build, no li
 
 ## Customizing the train
 
-The organizer (`settings.organizer_email`) can tap **Organizer? Edit details** on the page and enter their email to change all of this. It's an honor-system check: anyone who knows that email could edit. You can also edit the single row in the `settings` table (Supabase dashboard → Table Editor → `settings`):
+The organizer taps **Organizer login** on the page and enters the organizer password to change all of this. Logged in, they also see each signup's phone and email and can copy all emails at once. You can also edit the single row in the `settings` table (Supabase dashboard → Table Editor → `settings`):
 
 | column | meaning |
 | --- | --- |
@@ -16,7 +16,6 @@ The organizer (`settings.organizer_email`) can tap **Organizer? Edit details** o
 | `message` | Intro text under the title |
 | `address`, `dropoff_window`, `dietary_notes` | Shown in the info box (blank = hidden) |
 | `start_date`, `end_date` | Range of meal days |
-| `organizer_email` | Email allowed to edit these details from the page (never sent to visitors) |
 | `meal_days` | Days of the week that get a meal, `0`=Sun … `6`=Sat, e.g. `{1,3,5}` |
 
 Changes show up on the next page load. No redeploy needed.
@@ -26,6 +25,15 @@ Changes show up on the next page load. No redeploy needed.
 - **See contact info / fix a signup:** Table Editor → `signups`.
 - **Someone can't get in (typo'd email or locked out):** fix their `email` / reset `failed_claims` to 0 in `signups`,
   or send them `https://<pages-url>/#edit=<id>.<edit_token>`, which opens their signup directly.
+
+## Changing the organizer password
+
+Run in the Supabase SQL editor (this also logs out existing organizer sessions):
+
+```sql
+update settings set organizer_password_hash = extensions.crypt('new password here', extensions.gen_salt('bf'));
+delete from organizer_sessions;
+```
 
 ## Setup from scratch
 

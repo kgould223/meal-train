@@ -59,6 +59,9 @@
   .err { color: var(--accent); font-size: .9rem; margin-top: 12px; }
   .done p { margin: 0 0 12px; }
   .org-link { text-align: right; margin: -16px 0 8px; }
+  .org-link { display: flex; justify-content: flex-end; gap: 14px; flex-wrap: wrap; font-size: .85rem; color: var(--muted); }
+  .contact { font-size: .85rem; overflow-wrap: anywhere; }
+  .contact a { color: var(--accent); text-decoration: none; margin-right: 10px; }
   .org-link button, .toggle button { background: none; border: none; color: var(--muted); padding: 0; text-decoration: underline; font-size: .85rem; }
   .row2 { display: flex; gap: 8px; } .row2 > div { flex: 1; min-width: 0; }
   .days { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -71,7 +74,7 @@
 <main>
   <h1 id="title">Meal Train</h1>
   <div class="info" id="info"></div>
-  <div class="org-link"><button type="button" id="org-open">Organizer? Edit details</button></div>
+  <div class="org-link" id="org-bar"></div>
   <div id="list"><div id="status">Loading…</div></div>
   <div class="toggle" id="past-toggle" hidden><button type="button">Show past days</button></div>
 </main>
@@ -117,8 +120,9 @@
   </form>
   <form id="org-login" hidden>
     <h3>Organizer login</h3>
-    <label for="o-login-email">Organizer email</label>
-    <input id="o-login-email" type="email" required maxlength="200" autocomplete="email">
+    <p class="sub">Log in to edit the details above and see everyone's contact info.</p>
+    <label for="o-login-pw">Organizer password</label>
+    <input id="o-login-pw" type="password" required maxlength="200" autocomplete="current-password">
     <div class="err" id="o-login-err" hidden></div>
     <div class="actions">
       <button type="button" class="close">Close</button>
@@ -210,6 +214,8 @@ function render() {
     if (val) info.append(el('div', {}, el('b', {}, label), val));
   }
 
+  renderOrgBar();
+
   const bySignup = Object.fromEntries(state.signups.map(x => [x.meal_date, x]));
   const tokens = getTokens(), today = todayIso();
   const days = mealDays();
@@ -230,7 +236,8 @@ function render() {
     const body = sig
       ? el('div', { class: 'body' },
           el('div', { class: 'who' }, sig.name, mine ? el('span', { class: 'pill' }, 'You') : null),
-          sig.meal ? el('div', { class: 'what' }, sig.meal) : null)
+          sig.meal ? el('div', { class: 'what' }, sig.meal) : null,
+          contacts[sig.id] ? contactLine(contacts[sig.id]) : null)
       : el('div', { class: 'body' }, el('span', { class: 'open-label' }, 'Open'));
     const btn = past ? null
       : mine ? el('button', { onclick: () => openEdit(sig.id, tokens[sig.id]) }, 'Edit')
@@ -342,27 +349,72 @@ $('claim').addEventListener('submit', async ev => {
     await openEdit(claiming.id, res.token);
   } catch (e) { $('c-err').textContent = e.message; $('c-err').hidden = false; $('c-submit').disabled = false; }
 });
-// Organizer: edit the details at the top of the page.
-const ORG_KEY = 'mealtrain-organizer';
+// Organizer: password login unlocks editing the details and seeing contact info.
+// The browser keeps a session token, not the password.
+const ORG_KEY = 'mealtrain-organizer-session';
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-let orgEmail = null;
-$('org-open').addEventListener('click', async () => {
-  let saved = null; try { saved = localStorage.getItem(ORG_KEY); } catch {}
-  if (saved && await rpc('is_organizer', { p_email: saved }).catch(() => false)) return openOrgForm(saved);
-  $('o-login-email').value = ''; $('o-login-err').hidden = true;
+let orgToken = null; try { orgToken = localStorage.getItem(ORG_KEY); } catch {}
+let contacts = {}; // signup id -> { email, phone }
+
+function renderOrgBar() {
+  const bar = $('org-bar');
+  bar.replaceChildren(...(orgToken
+    ? [el('span', {}, 'Organizer'),
+       el('button', { type: 'button', onclick: openOrgForm }, 'Edit details'),
+       el('button', { type: 'button', onclick: copyEmails }, 'Copy all emails'),
+       el('button', { type: 'button', onclick: orgLogout }, 'Log out')]
+    : [el('button', { type: 'button', onclick: openOrgLogin }, 'Organizer login')]));
+}
+
+function contactLine(c) {
+  return el('div', { class: 'contact' },
+    el('a', { href: `tel:${c.phone.replace(/[^\d+]/g, '')}` }, c.phone),
+    el('a', { href: `mailto:${c.email}` }, c.email));
+}
+
+async function loadContacts() {
+  if (!orgToken) { contacts = {}; return; }
+  try {
+    const rows = await rpc('organizer_contacts', { p_token: orgToken });
+    contacts = Object.fromEntries(rows.map(r => [r.id, r]));
+  } catch { setOrgToken(null); }
+}
+
+function setOrgToken(t) {
+  orgToken = t; contacts = {};
+  try { t ? localStorage.setItem(ORG_KEY, t) : localStorage.removeItem(ORG_KEY); } catch {}
+}
+
+function openOrgLogin() {
+  $('o-login-pw').value = ''; $('o-login-err').hidden = true;
   showPanel('org-login');
-});
+  $('o-login-pw').focus();
+}
 $('org-login').addEventListener('submit', async ev => {
   ev.preventDefault();
-  const email = $('o-login-email').value;
   try {
-    if (!await rpc('is_organizer', { p_email: email })) throw new Error("That isn't the organizer email");
-    try { localStorage.setItem(ORG_KEY, email); } catch {}
-    openOrgForm(email);
+    const res = await rpc('organizer_login', { p_password: $('o-login-pw').value });
+    if (res.error) throw new Error(res.error);
+    setOrgToken(res.token);
+    $('dlg').close();
+    load();
   } catch (e) { $('o-login-err').textContent = e.message; $('o-login-err').hidden = false; }
 });
-function openOrgForm(email) {
-  orgEmail = email;
+
+async function orgLogout() {
+  await rpc('organizer_logout', { p_token: orgToken }).catch(() => {});
+  setOrgToken(null);
+  render();
+}
+
+async function copyEmails() {
+  const emails = [...new Set(Object.values(contacts).map(c => c.email))].join(', ');
+  if (!emails) return alert('No signups yet.');
+  try { await navigator.clipboard.writeText(emails); alert(`Copied ${emails.split(', ').length} email(s).`); }
+  catch { prompt('Copy these emails:', emails); }
+}
+
+function openOrgForm() {
   const s = state.settings;
   $('o-headline').value = s.headline; $('o-message').value = s.message; $('o-address').value = s.address;
   $('o-dropoff').value = s.dropoff_window; $('o-dietary').value = s.dietary_notes;
@@ -379,7 +431,7 @@ $('org-form').addEventListener('submit', async ev => {
   $('o-submit').disabled = true; $('o-err').hidden = true;
   try {
     await rpc('update_settings', {
-      p_email: orgEmail, p_headline: $('o-headline').value, p_message: $('o-message').value,
+      p_token: orgToken, p_headline: $('o-headline').value, p_message: $('o-message').value,
       p_address: $('o-address').value, p_dropoff_window: $('o-dropoff').value, p_dietary_notes: $('o-dietary').value,
       p_start_date: $('o-start').value, p_end_date: $('o-end').value,
       p_meal_days: [...$('o-days').querySelectorAll('input:checked')].map(c => Number(c.value)),
@@ -393,7 +445,7 @@ $('past-toggle').addEventListener('click', () => { showPast = !showPast; render(
 
 async function load() {
   try {
-    state = await rpc('get_schedule');
+    [state] = await Promise.all([rpc('get_schedule'), loadContacts()]);
     render();
   } catch (e) {
     $('list').replaceChildren(el('div', { id: 'status' }, "Couldn't load the schedule. Please refresh."));
