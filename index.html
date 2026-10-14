@@ -56,8 +56,13 @@
   .actions .danger { margin-right: auto; color: var(--accent); background: none; border-color: transparent; padding-left: 0; }
   .err { color: var(--accent); font-size: .9rem; margin-top: 12px; }
   .done p { margin: 0 0 12px; }
+  .org-link { text-align: right; margin: -16px 0 8px; }
+  .org-link button, .toggle button { background: none; border: none; color: var(--muted); padding: 0; text-decoration: underline; font-size: .85rem; }
+  .row2 { display: flex; gap: 8px; } .row2 > div { flex: 1; min-width: 0; }
+  .days { display: flex; flex-wrap: wrap; gap: 6px; }
+  .days label { display: flex; align-items: center; gap: 4px; margin: 0; font-weight: 400; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+  .days input { width: auto; }
   .toggle { margin: 8px 0 0; }
-  .toggle button { background: none; border: none; color: var(--muted); padding: 0; text-decoration: underline; font-size: .9rem; }
 </style>
 </head>
 <body>
@@ -65,6 +70,7 @@
   <h1 id="title">Meal Train</h1>
   <p class="sub" id="message"></p>
   <div class="info" id="info"></div>
+  <div class="org-link"><button type="button" id="org-open">Organizer? Edit details</button></div>
   <div id="list"><div id="status">Loading…</div></div>
   <div class="toggle" id="past-toggle" hidden><button type="button">Show past days</button></div>
 </main>
@@ -87,7 +93,7 @@
     <div class="err" id="f-err" hidden></div>
     <div class="actions">
       <button type="button" class="danger" id="f-delete" hidden>Cancel my signup</button>
-      <button type="button" id="f-cancel">Close</button>
+      <button type="button" class="close">Close</button>
       <button type="submit" class="primary" id="f-submit">Sign up</button>
     </div>
   </form>
@@ -104,8 +110,42 @@
     <input id="c-email" type="email" required maxlength="200" autocomplete="email">
     <div class="err" id="c-err" hidden></div>
     <div class="actions">
-      <button type="button" id="c-cancel">Close</button>
+      <button type="button" class="close">Close</button>
       <button type="submit" class="primary" id="c-submit">Continue</button>
+    </div>
+  </form>
+  <form id="org-login" hidden>
+    <h3>Organizer login</h3>
+    <label for="o-login-email">Organizer email</label>
+    <input id="o-login-email" type="email" required maxlength="200" autocomplete="email">
+    <div class="err" id="o-login-err" hidden></div>
+    <div class="actions">
+      <button type="button" class="close">Close</button>
+      <button type="submit" class="primary">Continue</button>
+    </div>
+  </form>
+  <form id="org-form" hidden>
+    <h3>Edit meal train details</h3>
+    <label for="o-headline">Title</label>
+    <input id="o-headline" maxlength="120" required>
+    <label for="o-message">Message <small>(shown under the title)</small></label>
+    <textarea id="o-message" maxlength="2000"></textarea>
+    <label for="o-address">Drop-off address</label>
+    <input id="o-address" maxlength="300">
+    <label for="o-dropoff">Drop-off time</label>
+    <input id="o-dropoff" maxlength="100" placeholder="e.g. 5:00 – 6:00 pm">
+    <label for="o-dietary">Dietary notes</label>
+    <textarea id="o-dietary" maxlength="1000" placeholder="Allergies, likes, dislikes"></textarea>
+    <div class="row2">
+      <div><label for="o-start">First meal</label><input id="o-start" type="date" required></div>
+      <div><label for="o-end">Last meal</label><input id="o-end" type="date" required></div>
+    </div>
+    <label>Meal days</label>
+    <div class="days" id="o-days"></div>
+    <div class="err" id="o-err" hidden></div>
+    <div class="actions">
+      <button type="button" class="close">Close</button>
+      <button type="submit" class="primary" id="o-submit">Save</button>
     </div>
   </form>
 </dialog>
@@ -212,10 +252,16 @@ function fillDates(selected, allowTaken) {
 }
 
 function showForm() {
-  $('form').hidden = false; $('done').hidden = true; $('claim').hidden = true; $('f-err').hidden = true;
+  showPanel('form'); $('f-err').hidden = true;
   $('f-submit').disabled = false;
+}
+
+// The dialog holds several forms; show one at a time.
+function showPanel(id) {
+  for (const f of $('dlg').querySelectorAll('form')) f.hidden = f.id !== id;
   if (!$('dlg').open) $('dlg').showModal();
 }
+for (const b of $('dlg').querySelectorAll('.close')) b.addEventListener('click', () => $('dlg').close());
 
 function openNew(date) {
   editing = null;
@@ -261,7 +307,7 @@ $('form').addEventListener('submit', async ev => {
       const [{ id, edit_token }] = await rpc('create_signup', args);
       saveToken(id, edit_token);
       $('done-msg').textContent = `You're signed up for ${fmtLong(args.p_date)}.`;
-      $('form').hidden = true; $('done').hidden = false;
+      showPanel('done');
     }
   } catch (e) { fail(e); }
   load();
@@ -272,7 +318,6 @@ $('f-delete').addEventListener('click', async () => {
   try { await rpc('delete_signup', { p_id: editing.id, p_token: editing.token }); dropToken(editing.id); $('dlg').close(); load(); }
   catch (e) { fail(e); }
 });
-$('f-cancel').addEventListener('click', () => $('dlg').close());
 
 // Editing from a new device: prove it's you with the email you signed up with.
 let claiming = null;
@@ -282,8 +327,7 @@ function openClaim(sig) {
   let last = {}; try { last = JSON.parse(localStorage.getItem('mealtrain-me')) || {}; } catch {}
   $('c-email').value = last.email || '';
   $('c-err').hidden = true; $('c-submit').disabled = false;
-  $('form').hidden = true; $('done').hidden = true; $('claim').hidden = false;
-  $('dlg').showModal();
+  showPanel('claim');
   $('c-email').focus();
 }
 $('claim').addEventListener('submit', async ev => {
@@ -297,7 +341,53 @@ $('claim').addEventListener('submit', async ev => {
     await openEdit(claiming.id, res.token);
   } catch (e) { $('c-err').textContent = e.message; $('c-err').hidden = false; $('c-submit').disabled = false; }
 });
-$('c-cancel').addEventListener('click', () => $('dlg').close());
+// Organizer: edit the details at the top of the page.
+const ORG_KEY = 'mealtrain-organizer';
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+let orgEmail = null;
+$('org-open').addEventListener('click', async () => {
+  let saved = null; try { saved = localStorage.getItem(ORG_KEY); } catch {}
+  if (saved && await rpc('is_organizer', { p_email: saved }).catch(() => false)) return openOrgForm(saved);
+  $('o-login-email').value = ''; $('o-login-err').hidden = true;
+  showPanel('org-login');
+});
+$('org-login').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const email = $('o-login-email').value;
+  try {
+    if (!await rpc('is_organizer', { p_email: email })) throw new Error("That isn't the organizer email");
+    try { localStorage.setItem(ORG_KEY, email); } catch {}
+    openOrgForm(email);
+  } catch (e) { $('o-login-err').textContent = e.message; $('o-login-err').hidden = false; }
+});
+function openOrgForm(email) {
+  orgEmail = email;
+  const s = state.settings;
+  $('o-headline').value = s.headline; $('o-message').value = s.message; $('o-address').value = s.address;
+  $('o-dropoff').value = s.dropoff_window; $('o-dietary').value = s.dietary_notes;
+  $('o-start').value = s.start_date; $('o-end').value = s.end_date;
+  $('o-days').replaceChildren(...DAY_NAMES.map((n, i) => {
+    const cb = el('input', { type: 'checkbox', value: i }); cb.checked = s.meal_days.includes(i);
+    return el('label', {}, cb, n);
+  }));
+  $('o-err').hidden = true; $('o-submit').disabled = false;
+  showPanel('org-form');
+}
+$('org-form').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  $('o-submit').disabled = true; $('o-err').hidden = true;
+  try {
+    await rpc('update_settings', {
+      p_email: orgEmail, p_headline: $('o-headline').value, p_message: $('o-message').value,
+      p_address: $('o-address').value, p_dropoff_window: $('o-dropoff').value, p_dietary_notes: $('o-dietary').value,
+      p_start_date: $('o-start').value, p_end_date: $('o-end').value,
+      p_meal_days: [...$('o-days').querySelectorAll('input:checked')].map(c => Number(c.value)),
+    });
+    $('dlg').close();
+    load();
+  } catch (e) { $('o-err').textContent = e.message; $('o-err').hidden = false; $('o-submit').disabled = false; }
+});
+
 $('past-toggle').addEventListener('click', () => { showPast = !showPast; render(); });
 
 async function load() {
