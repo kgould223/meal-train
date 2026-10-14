@@ -15,7 +15,7 @@ The organizer taps **Organizer login** on the page and enters the organizer pass
 | `headline` | Page title, e.g. "Meals for Sam & Alex" |
 | `message` | Intro text under the title |
 | `address`, `dropoff_window`, `dietary_notes` | Shown in the info box (blank = hidden) |
-| `start_date`, `end_date` | Range of meal days |
+| `ranges` | List of date ranges that get meals, e.g. `[{"start":"2026-10-14","end":"2026-10-25"},{"start":"2026-11-03","end":"2026-11-20"}]` |
 | `meal_days` | Days of the week that get a meal, `0`=Sun … `6`=Sat, e.g. `{1,3,5}` |
 | `skip_dates` | Specific dates with no meal (the organizer toggles these with the Skip / Add back buttons) |
 
