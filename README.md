@@ -36,6 +36,13 @@ update settings set organizer_password_hash = extensions.crypt('new password her
 delete from organizer_sessions;
 ```
 
+## Keeping Supabase awake
+
+Free Supabase projects pause after about a week with no activity, and the page then fails to load until
+someone clicks **Restore** in the dashboard. `.github/workflows/keepalive.yml` loads the schedule every
+3 days to prevent that. GitHub disables scheduled workflows after 60 days without repo activity; re-enable
+it from the Actions tab if needed.
+
 ## Setup from scratch
 
 1. Create a Supabase project and run `supabase link --project-ref <ref>` then `supabase db push`.

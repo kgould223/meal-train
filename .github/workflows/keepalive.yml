@@ -1,0 +1,21 @@
+# Supabase pauses free projects after ~1 week without activity. Loading the
+# schedule every few days counts as activity and keeps the database awake.
+name: Keep Supabase awake
+
+on:
+  schedule:
+    - cron: "17 15 */3 * *" # every 3 days, 15:17 UTC
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load the schedule
+        run: |
+          URL=$(grep -o "SUPABASE_URL = '[^']*'" index.html | cut -d"'" -f2)
+          KEY=$(grep -o "SUPABASE_KEY = '[^']*'" index.html | cut -d"'" -f2)
+          curl --fail --silent --show-error --max-time 30 -o /dev/null -w "HTTP %{http_code}\n" \
+            -X POST "$URL/rest/v1/rpc/get_schedule" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{}'
