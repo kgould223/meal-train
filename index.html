@@ -469,15 +469,28 @@ function openOrgForm() {
 $('org-form').addEventListener('submit', async ev => {
   ev.preventDefault();
   $('o-submit').disabled = true; $('o-err').hidden = true;
+  const ranges = [...$('o-ranges').children].map(row => {
+    const [start, end] = row.querySelectorAll('input');
+    return { start: start.value || null, end: end.value || null };
+  });
+  const days = [...$('o-days').querySelectorAll('input:checked')].map(c => Number(c.value));
   try {
+    // Check these first so a mistake can't make every signup look "outside the dates".
+    if (!days.length) throw new Error('Pick at least one meal day');
+    if (ranges.some(r => r.end < r.start)) throw new Error('Each range must end on or after its start date');
+    // Upcoming signups outside the new dates get deleted, but only after confirming.
+    const stranded = await rpc('organizer_stranded', { p_token: orgToken, p_ranges: ranges, p_meal_days: days });
+    if (stranded.length && !confirm(
+      `${stranded.length === 1 ? 'This signup falls' : `These ${stranded.length} signups fall`} outside the new dates:\n\n` +
+      stranded.map(x => `• ${x.name} – ${fmtLong(x.meal_date)}`).join('\n') +
+      `\n\nDelete ${stranded.length === 1 ? 'it' : 'them'} and save? You may want to let them know.`)) {
+      $('o-submit').disabled = false;
+      return;
+    }
     await rpc('update_settings', {
       p_token: orgToken, p_headline: $('o-headline').value, p_message: $('o-message').value,
       p_address: $('o-address').value, p_dropoff_window: $('o-dropoff').value, p_dietary_notes: $('o-dietary').value,
-      p_ranges: [...$('o-ranges').children].map(row => {
-        const [start, end] = row.querySelectorAll('input');
-        return { start: start.value || null, end: end.value || null };
-      }),
-      p_meal_days: [...$('o-days').querySelectorAll('input:checked')].map(c => Number(c.value)),
+      p_ranges: ranges, p_meal_days: days, p_delete_stranded: stranded.length > 0,
     });
     $('dlg').close();
     load();
